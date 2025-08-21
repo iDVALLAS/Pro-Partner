@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>BrokerMatch AI — MVP Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, -apple-system, Arial, sans-serif; margin: 24px; }
+    h1 { margin-bottom: 8px; }
+    .note { color:#444; margin-bottom:16px; }
+    .wrap { display:grid; gap:12px; }
+    .card { border:1px solid #ddd; border-radius:10px; padding:14px; }
+    .pill { display:inline-block; padding:2px 8px; border:1px solid #ccc; border-radius:999px; margin-right:6px; font-size:12px; }
+    .why { margin-top:8px; font-size:14px; }
+  </style>
+</head>
+<body>
+  <h1>BrokerMatch AI — Alerts</h1>
+  <div class="note">This is the super simple MVP. Data lives in <code>docs/data/agents.json</code>.</div>
+  <div id="alerts" class="wrap">Loading…</div>
+
+  <script>
+    // Simple "is this agent hot?" rules for the MVP
+    function alertReason(agent) {
+      const closings = Number(agent.closings_90d || 0);
+      const recentDays = daysSince(agent.last_close);
+      const reasons = [];
+      if (closings >= 3) reasons.push("🔥 3+ closings in 90 days");
+      if (recentDays !== null && recentDays <= 14) reasons.push("⏱️ very recent closing");
+      return reasons;
+    }
+
+    function daysSince(dateStr) {
+      if (!dateStr) return null;
+      const d = new Date(dateStr + "T00:00:00");
+      if (isNaN(d)) return null;
+      const ms = Date.now() - d.getTime();
+      return Math.floor(ms / (1000*60*60*24));
+    }
+
+    fetch('data/agents.json')
+      .then(r => r.json())
+      .then(data => {
+        const container = document.getElementById('alerts');
+        container.innerHTML = '';
+        const hot = data.map(a => ({...a, reasons: alertReason(a)}))
+                        .filter(a => a.reasons.length > 0);
+
+        if (hot.length === 0) {
+          container.textContent = "No alerts yet.";
+          return;
+        }
+
+        hot.forEach(a => {
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.innerHTML = `
+            <div><strong>${a.name}</strong> <span class="pill">${a.state}</span> <span class="pill">${a.brokerage || 'Brokerage n/a'}</span></div>
+            <div class="why">
+              <div>Closings (90d): <strong>${a.closings_90d ?? 0}</strong></div>
+              <div>Last close: <strong>${a.last_close || 'n/a'}</strong></div>
+              <div>Why match: ${a.reasons.join(' • ')}</div>
+              <div style="margin-top:6px; font-size:13px; color:#666">
+                Contact: ${a.email || '—'} ${a.phone ? '• ' + a.phone : ''}
+              </div>
+            </div>
+          `;
+          container.appendChild(card);
+        });
+      })
+      .catch(err => {
+        document.getElementById('alerts').textContent = "Could not load data. Check that docs/data/agents.json exists.";
+        console.error(err);
+      });
+  </script>
+</body>
+</html>
