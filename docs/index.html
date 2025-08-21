@@ -5,30 +5,71 @@
   <title>BrokerMatch AI — MVP Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
+    * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, Arial, sans-serif; margin: 24px; }
-    h1 { margin-bottom: 8px; }
-    .note { color:#444; margin-bottom:16px; }
-    .wrap { display:grid; gap:12px; }
+    h1 { margin: 0 0 8px; }
+    .topbar { display:flex; gap:12px; align-items:center; margin-bottom:16px; flex-wrap:wrap;}
+    .note { color:#444; }
+    .wrap { display:grid; grid-template-columns: 1fr 360px; gap:16px; }
+    @media (max-width: 900px){ .wrap { grid-template-columns: 1fr; } }
+    .list { display:grid; gap:12px; }
     .card { border:1px solid #ddd; border-radius:10px; padding:14px; }
     .pill { display:inline-block; padding:2px 8px; border:1px solid #ccc; border-radius:999px; margin-right:6px; font-size:12px; }
     .why { margin-top:8px; font-size:14px; }
+    .actions { margin-top:10px; display:flex; gap:8px; align-items:center; }
+    button { cursor:pointer; border:1px solid #ccc; background:#fff; border-radius:8px; padding:6px 10px; }
+    button.primary { border-color:#000; }
+    .sidebar { border:1px solid #ddd; border-radius:10px; padding:14px; min-height:220px; }
+    .sidebar h3 { margin-top:0; }
+    .muted { color:#666; }
+    input[type="text"] { padding:8px; border:1px solid #ccc; border-radius:8px; }
+    .row { margin:6px 0; }
+    .a { text-decoration:none; }
   </style>
 </head>
 <body>
   <h1>BrokerMatch AI — Alerts</h1>
-  <div class="note">This is the super simple MVP. Data lives in <code>docs/data/agents.json</code>.</div>
-  <div id="alerts" class="wrap">Loading…</div>
+  <div class="topbar">
+    <div class="note">Data: <code>docs/data/agents.json</code></div>
+    <label><input type="checkbox" id="onlyWatch"> Show watchlist only</label>
+    <input id="q" type="text" placeholder="Search name, brokerage, state…" />
+  </div>
+
+  <div class="wrap">
+    <div>
+      <div id="alerts" class="list">Loading…</div>
+    </div>
+
+    <aside class="sidebar">
+      <h3 id="p-name">Agent Profile</h3>
+      <div id="p-meta" class="muted row">Select an agent to view details.</div>
+      <div id="p-interests" class="row"></div>
+      <div id="p-community" class="row"></div>
+      <div id="p-links" class="row"></div>
+      <div class="row">
+        <label class="muted">Private notes (only you):</label><br/>
+        <textarea id="p-notes" style="width:100%;height:90px;border:1px solid #ccc;border-radius:8px;"></textarea>
+      </div>
+      <div class="row"><button id="save-notes">Save notes</button></div>
+    </aside>
+  </div>
 
   <script>
-    // Simple "is this agent hot?" rules for the MVP
-    function alertReason(agent) {
-      const closings = Number(agent.closings_90d || 0);
-      const recentDays = daysSince(agent.last_close);
-      const reasons = [];
-      if (closings >= 3) reasons.push("🔥 3+ closings in 90 days");
-      if (recentDays !== null && recentDays <= 14) reasons.push("⏱️ very recent closing");
-      return reasons;
-    }
+    // ---- Simple state (saved locally in the browser)
+    const LS_WATCH = 'bm_watchlist';
+    const LS_NOTES = 'bm_notes';
+    let data = [];
+    let watch = new Set(JSON.parse(localStorage.getItem(LS_WATCH) || '[]'));
+    let notes = JSON.parse(localStorage.getItem(LS_NOTES) || '{}');
+    let current = null;
+
+    const qs = s => document.querySelector(s);
+    const alertsEl = qs('#alerts');
+    const onlyWatchEl = qs('#onlyWatch');
+    const qEl = qs('#q');
+
+    onlyWatchEl.addEventListener('change', render);
+    qEl.addEventListener('input', render);
 
     function daysSince(dateStr) {
       if (!dateStr) return null;
@@ -38,40 +79,122 @@
       return Math.floor(ms / (1000*60*60*24));
     }
 
+    function alertReason(agent) {
+      const closings = Number(agent.closings_90d || 0);
+      const recentDays = daysSince(agent.last_close);
+      const reasons = [];
+      if (closings >= 3) reasons.push("🔥 3+ closings in 90 days");
+      if (recentDays !== null && recentDays <= 14) reasons.push("⏱️ very recent closing");
+      return reasons;
+    }
+
+    function isMatch(a, q){
+      if(!q) return true;
+      q = q.toLowerCase();
+      return [a.name, a.brokerage, a.state].filter(Boolean).some(v => String(v).toLowerCase().includes(q));
+    }
+
+    function render(){
+      const q = qEl.value.trim();
+      const showWatchOnly = onlyWatchEl.checked;
+
+      const hot = data.map(a => ({...a, reasons: alertReason(a)}))
+                      .filter(a => a.reasons.length > 0)
+                      .filter(a => isMatch(a, q))
+                      .filter(a => showWatchOnly ? watch.has(a.name) : true);
+
+      alertsEl.innerHTML = '';
+      if (hot.length === 0){
+        alertsEl.textContent = "No alerts.";
+        return;
+      }
+      hot.forEach(a => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        const watched = watch.has(a.name);
+
+        card.innerHTML = `
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+            <div>
+              <strong>${a.name}</strong>
+              ${a.state ? `<span class="pill">${a.state}</span>` : ``}
+              ${a.brokerage ? `<span class="pill">${a.brokerage}</span>` : ``}
+            </div>
+            <div class="actions">
+              <button class="watch ${watched ? 'primary':''}" data-name="${a.name}">
+                ${watched ? '⭐ Watching' : '☆ Add to watchlist'}
+              </button>
+              <button class="view" data-name="${a.name}">View profile</button>
+            </div>
+          </div>
+          <div class="why">
+            <div>Closings (90d): <strong>${a.closings_90d ?? 0}</strong></div>
+            <div>Last close: <strong>${a.last_close || 'n/a'}</strong></div>
+            <div>Why match: ${a.reasons.join(' • ')}</div>
+            <div style="margin-top:6px; font-size:13px; color:#666">
+              Contact: ${a.email || '—'} ${a.phone ? '• ' + a.phone : ''}
+            </div>
+          </div>
+        `;
+        alertsEl.appendChild(card);
+      });
+
+      alertsEl.querySelectorAll('button.watch').forEach(btn => {
+        btn.onclick = () => {
+          const name = btn.getAttribute('data-name');
+          if (watch.has(name)) watch.delete(name); else watch.add(name);
+          localStorage.setItem(LS_WATCH, JSON.stringify([...watch]));
+          render();
+          if(current && current.name === name) showProfile(data.find(x=>x.name===name));
+        };
+      });
+
+      alertsEl.querySelectorAll('button.view').forEach(btn => {
+        btn.onclick = () => {
+          const name = btn.getAttribute('data-name');
+          const agent = data.find(a => a.name === name);
+          showProfile(agent);
+        };
+      });
+    }
+
+    function showProfile(a){
+      current = a;
+      qs('#p-name').textContent = a ? a.name : 'Agent Profile';
+      qs('#p-meta').innerHTML = a ? `
+        <div>${a.state ? `<span class="pill">${a.state}</span>`:``}
+             ${a.brokerage ? `<span class="pill">${a.brokerage}</span>`:``}</div>
+        <div class="muted">Email: ${a.email || '—'} ${a.phone ? ' • ' + a.phone : ''}</div>
+        <div class="muted">Closings (90d): ${a.closings_90d ?? 0} • Last close: ${a.last_close || 'n/a'}</div>
+      ` : 'Select an agent to view details.';
+
+      qs('#p-interests').innerHTML = a && a.interests?.length ? 
+        `<strong>Interests:</strong> ${a.interests.join(', ')}` : '';
+
+      qs('#p-community').innerHTML = a && a.community?.length ? 
+        `<strong>Community (public):</strong> ${a.community.join(', ')}` : '';
+
+      const links = [];
+      if (a?.website) links.push(`<a class="a" target="_blank" href="${a.website}">Website</a>`);
+      if (a?.socials?.linkedin) links.push(`<a class="a" target="_blank" href="${a.socials.linkedin}">LinkedIn</a>`);
+      if (a?.socials?.instagram) links.push(`<a class="a" target="_blank" href="${a.socials.instagram}">Instagram</a>`);
+      if (a?.socials?.youtube) links.push(`<a class="a" target="_blank" href="${a.socials.youtube}">YouTube</a>`);
+      qs('#p-links').innerHTML = links.length ? `<strong>Links:</strong> ${links.join(' • ')}` : '';
+
+      qs('#p-notes').value = notes[a.name] || '';
+    }
+
+    qs('#save-notes').onclick = () => {
+      if (!current) return;
+      notes[current.name] = qs('#p-notes').value;
+      localStorage.setItem(LS_NOTES, JSON.stringify(notes));
+      alert('Notes saved');
+    };
+
     fetch('data/agents.json')
       .then(r => r.json())
-      .then(data => {
-        const container = document.getElementById('alerts');
-        container.innerHTML = '';
-        const hot = data.map(a => ({...a, reasons: alertReason(a)}))
-                        .filter(a => a.reasons.length > 0);
-
-        if (hot.length === 0) {
-          container.textContent = "No alerts yet.";
-          return;
-        }
-
-        hot.forEach(a => {
-          const card = document.createElement('div');
-          card.className = 'card';
-          card.innerHTML = `
-            <div><strong>${a.name}</strong> <span class="pill">${a.state}</span> <span class="pill">${a.brokerage || 'Brokerage n/a'}</span></div>
-            <div class="why">
-              <div>Closings (90d): <strong>${a.closings_90d ?? 0}</strong></div>
-              <div>Last close: <strong>${a.last_close || 'n/a'}</strong></div>
-              <div>Why match: ${a.reasons.join(' • ')}</div>
-              <div style="margin-top:6px; font-size:13px; color:#666">
-                Contact: ${a.email || '—'} ${a.phone ? '• ' + a.phone : ''}
-              </div>
-            </div>
-          `;
-          container.appendChild(card);
-        });
-      })
-      .catch(err => {
-        document.getElementById('alerts').textContent = "Could not load data. Check that docs/data/agents.json exists.";
-        console.error(err);
-      });
+      .then(json => { data = json; render(); })
+      .catch(err => { alertsEl.textContent = "Could not load data."; console.error(err); });
   </script>
 </body>
 </html>
