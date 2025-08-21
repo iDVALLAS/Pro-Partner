@@ -6,7 +6,14 @@
     "closings_90d": 5,
     "last_close": "2025-08-10",
     "email": "sarah@example.com",
-    "phone": "555-123-1111"
+    "phone": "555-123-1111",
+    "website": "https://sarah-lee-homes.example.com",
+    "socials": {
+      "linkedin": "https://www.linkedin.com/in/sarahlee",
+      "instagram": "https://www.instagram.com/sarahhomes"
+    },
+    "interests": ["Neighborhood market stats", "Open house tours", "Local youth sports"],
+    "community": ["Rotary (public listing)", "Chamber of Commerce"]
   },
   {
     "name": "Miguel Perez",
@@ -15,7 +22,14 @@
     "closings_90d": 4,
     "last_close": "2025-08-08",
     "email": "miguel@example.com",
-    "phone": "555-234-2222"
+    "phone": "555-234-2222",
+    "website": "https://miguelperezrealty.example.com",
+    "socials": {
+      "linkedin": "https://www.linkedin.com/in/miguelperez",
+      "youtube": "https://www.youtube.com/@miguelrealestate"
+    },
+    "interests": ["New build communities", "Down payment programs"],
+    "community": ["Hispanic Business Assoc. (public)", "Habitat for Humanity volunteer"]
   },
   {
     "name": "Ava Chen",
@@ -24,7 +38,8 @@
     "closings_90d": 1,
     "last_close": "2025-07-12",
     "email": "ava@example.com",
-    "phone": ""
+    "phone": "",
+    "interests": ["Condos", "Walkable neighborhoods"]
   },
   {
     "name": "Brianna King",
@@ -33,6 +48,7 @@
     "closings_90d": 0,
     "last_close": "2025-05-30",
     "email": "brianna@example.com",
-    "phone": ""
+    "phone": "",
+    "interests": ["First-time buyers", "VA buyers"]
   }
 ]
