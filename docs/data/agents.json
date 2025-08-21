@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Sarah Lee",
+    "state": "WA",
+    "brokerage": "Windermere",
+    "closings_90d": 5,
+    "last_close": "2025-08-10",
+    "email": "sarah@example.com",
+    "phone": "555-123-1111"
+  },
+  {
+    "name": "Miguel Perez",
+    "state": "AZ",
+    "brokerage": "eXp",
+    "closings_90d": 4,
+    "last_close": "2025-08-08",
+    "email": "miguel@example.com",
+    "phone": "555-234-2222"
+  },
+  {
+    "name": "Ava Chen",
+    "state": "WA",
+    "brokerage": "Redfin",
+    "closings_90d": 1,
+    "last_close": "2025-07-12",
+    "email": "ava@example.com",
+    "phone": ""
+  },
+  {
+    "name": "Brianna King",
+    "state": "AZ",
+    "brokerage": "HomeSmart",
+    "closings_90d": 0,
+    "last_close": "2025-05-30",
+    "email": "brianna@example.com",
+    "phone": ""
+  }
+]
