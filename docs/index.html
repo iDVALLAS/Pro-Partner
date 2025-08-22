@@ -1,8 +1,259 @@
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-// ====== 1) Supabase setup (paste your keys) ======
-const SUPABASE_URL = "https://zknejebnifvnmkojhboj.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprbmVqZWJuaWZ2bm1rb2poYm9qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU4NzU0MjcsImV4cCI6MjA3MTQ1MTQyN30.m9mXMuoeuxFxvBnu3r9aEZv5akcegFfOV3fg8eMEdUM";
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>BrokerMatch AI — Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Arial,sans-serif;margin:24px}
+    h1{margin:0 0 8px}
+    .topbar{display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+    .wrap{display:grid;grid-template-columns:1fr 380px;gap:16px}
+    @media(max-width:900px){.wrap{grid-template-columns:1fr}}
+    .list{display:grid;gap:12px}
+    .card{border:1px solid #ddd;border-radius:10px;padding:14px}
+    .pill{display:inline-block;padding:2px 8px;border:1px solid #ccc;border-radius:999px;margin-right:6px;font-size:12px}
+    .why{margin-top:8px;font-size:14px}
+    .actions{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    button{cursor:pointer;border:1px solid #ccc;background:#fff;border-radius:8px;padding:6px 10px}
+    button.primary{border-color:#000}
+    .sidebar{border:1px solid #ddd;border-radius:10px;padding:14px;min-height:220px}
+    .sidebar h3{margin-top:0}
+    .muted{color:#666}
+    input[type="text"]{padding:8px;border:1px solid #ccc;border-radius:8px}
+    .row{margin:6px 0}
+    textarea{width:100%;height:90px;border:1px solid #ccc;border-radius:8px}
+    .note{color:#444}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <h1>BrokerMatch AI — Alerts</h1>
+  <div class="topbar">
+    <div class="note">Live data via Supabase. Safe fields only (public/professional).</div>
+    <label><input type="checkbox" id="onlyWatch"> Show watchlist only</label>
+    <input id="q" type="text" placeholder="Search name, brokerage, state…">
+  </div>
 
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  <div class="wrap">
+    <div><div id="alerts" class="list">Loading…</div></div>
+
+    <aside class="sidebar">
+      <h3 id="p-name">Agent Profile</h3>
+      <div id="p-meta" class="muted row">Select an agent to view details.</div>
+      <div id="p-interests" class="row"></div>
+      <div id="p-community" class="row"></div>
+      <div id="p-links" class="row"></div>
+      <div class="row">
+        <label class="muted">Private notes (saved to cloud per device):</label><br>
+        <textarea id="p-notes"></textarea>
+      </div>
+      <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="save-notes">Save notes</button>
+        <button id="gen-script">Generate contact script</button>
+      </div>
+      <div class="row">
+        <label class="muted">Contact script (you can copy/edit):</label><br>
+        <textarea id="p-script" style="height:120px"></textarea>
+      </div>
+    </aside>
+  </div>
+
+<script>
+  // ====== 1) Supabase setup (your keys are already here) ======
+  const SUPABASE_URL = "https://zknejebnifvnmkojhboj.supabase.co";
+  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprbmVqZWJuaWZ2bm1rb2poYm9qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU4NzU0MjcsImV4cCI6MjA3MTQ1MTQyN30.m9mXMuoeuxFxvBnu3r9aEZv5akcegFfOV3fg8eMEdUM";
+
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // Device ID to separate each broker's saves
+  const DEVICE_ID_KEY = 'bm_device_id';
+  let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+  if(!deviceId){ deviceId = crypto.randomUUID(); localStorage.setItem(DEVICE_ID_KEY, deviceId); }
+
+  // Local state
+  let data = [];
+  let watch = new Set();
+  let notes = {};
+  let current = null;
+
+  const qs = s => document.querySelector(s);
+  const alertsEl = qs('#alerts');
+  const onlyWatchEl = qs('#onlyWatch');
+  const qEl = qs('#q');
+
+  onlyWatchEl.addEventListener('change', render);
+  qEl.addEventListener('input', render);
+
+  function daysSince(dateStr){
+    if(!dateStr) return null;
+    const d = new Date(dateStr + "T00:00:00");
+    if(isNaN(d)) return null;
+    return Math.floor((Date.now() - d.getTime()) / 86400000);
+  }
+
+  function alertReason(a){
+    const closings = Number(a.closings_90d||0);
+    const recent = daysSince(a.last_close);
+    const r = [];
+    if(closings >= 3) r.push("🔥 3+ closings in 90 days");
+    if(recent!==null && recent <= 14) r.push("⏱️ very recent closing");
+    return r;
+  }
+
+  function isMatch(a,q){
+    if(!q) return true;
+    q=q.toLowerCase();
+    return [a.name,a.brokerage,a.state].filter(Boolean).some(v=>String(v).toLowerCase().includes(q));
+  }
+
+  async function loadCloud(){
+    const { data: w } = await sb.from('watchlist').select('agent_name').eq('device_id', deviceId);
+    if(w) watch = new Set(w.map(x=>x.agent_name));
+
+    const { data: n } = await sb.from('notes').select('agent_name,note').eq('device_id', deviceId);
+    if(n) { notes = {}; n.forEach(x=>notes[x.agent_name]=x.note); }
+  }
+
+  async function saveWatch(name, on){
+    if(on) await sb.from('watchlist').insert({ device_id: deviceId, agent_name: name });
+    else await sb.from('watchlist').delete().eq('device_id', deviceId).eq('agent_name', name);
+  }
+
+  async function saveNote(name, text){
+    await sb.from('notes').delete().eq('device_id', deviceId).eq('agent_name', name);
+    await sb.from('notes').insert({ device_id: deviceId, agent_name: name, note: text });
+  }
+
+  function render(){
+    const q = qEl.value.trim();
+    const showWatchOnly = onlyWatchEl.checked;
+
+    const hot = data.map(a=>({...a, reasons: alertReason(a)}))
+                    .filter(a=>a.reasons.length>0)
+                    .filter(a=>isMatch(a,q))
+                    .filter(a=>showWatchOnly ? watch.has(a.name) : true);
+
+    alertsEl.innerHTML = '';
+    if(hot.length===0){ alertsEl.textContent = "No alerts."; return; }
+
+    hot.forEach(a=>{
+      const card = document.createElement('div');
+      card.className='card';
+      const watched = watch.has(a.name);
+      card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+          <div>
+            <strong>${a.name}</strong>
+            ${a.state?`<span class="pill">${a.state}</span>`:''}
+            ${a.brokerage?`<span class="pill">${a.brokerage}</span>`:''}
+          </div>
+          <div class="actions">
+            <button class="watch ${watched?'primary':''}" data-name="${a.name}">
+              ${watched?'⭐ Watching':'☆ Add to watchlist'}
+            </button>
+            <button class="view" data-name="${a.name}">View profile</button>
+            <button class="contact" data-name="${a.name}">Contact script</button>
+          </div>
+        </div>
+        <div class="why">
+          <div>Closings (90d): <strong>${a.closings_90d ?? 0}</strong></div>
+          <div>Last close: <strong>${a.last_close || 'n/a'}</strong></div>
+          <div>Why match: ${a.reasons.join(' • ')}</div>
+          <div style="margin-top:6px;font-size:13px;color:#666">
+            Contact: ${a.email || '—'} ${a.phone ? '• ' + a.phone : ''}
+          </div>
+        </div>
+      `;
+      alertsEl.appendChild(card);
+    });
+
+    alertsEl.querySelectorAll('button.watch').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const name = btn.getAttribute('data-name');
+        const on = !watch.has(name);
+        if(on) watch.add(name); else watch.delete(name);
+        await saveWatch(name, on);
+        render();
+        if(current && current.name===name) showProfile(current);
+      };
+    });
+
+    alertsEl.querySelectorAll('button.view').forEach(btn=>{
+      btn.onclick = ()=>{
+        const name = btn.getAttribute('data-name');
+        const agent = data.find(x=>x.name===name);
+        showProfile(agent);
+      };
+    });
+
+    alertsEl.querySelectorAll('button.contact').forEach(btn=>{
+      btn.onclick = ()=>{
+        const name = btn.getAttribute('data-name');
+        const agent = data.find(x=>x.name===name);
+        const script = buildScript(agent);
+        qs('#p-script').value = script;
+        showProfile(agent);
+      };
+    });
+  }
+
+  function showProfile(a){
+    current = a;
+    qs('#p-name').textContent = a ? a.name : 'Agent Profile';
+    qs('#p-meta').innerHTML = a ? `
+      <div>${a.state?`<span class="pill">${a.state}</span>`:''}
+           ${a.brokerage?`<span class="pill">${a.brokerage}</span>`:''}</div>
+      <div class="muted">Email: ${a.email||'—'} ${a.phone? ' • '+a.phone:''}</div>
+      <div class="muted">Closings (90d): ${a.closings_90d ?? 0} • Last close: ${a.last_close || 'n/a'}</div>
+    ` : 'Select an agent to view details.';
+    qs('#p-interests').innerHTML = a?.interests?.length ? `<strong>Interests:</strong> ${a.interests.join(', ')}` : '';
+    qs('#p-community').innerHTML = a?.community?.length ? `<strong>Community (public):</strong> ${a.community.join(', ')}` : '';
+    const links=[];
+    if(a?.website) links.push(`<a target="_blank" href="${a.website}">Website</a>`);
+    if(a?.socials?.linkedin) links.push(`<a target="_blank" href="${a.socials.linkedin}">LinkedIn</a>`);
+    if(a?.socials?.instagram) links.push(`<a target="_blank" href="${a.socials.instagram}">Instagram</a>`);
+    if(a?.socials?.youtube) links.push(`<a target="_blank" href="${a.socials.youtube}">YouTube</a>`);
+    qs('#p-links').innerHTML = links.length ? `<strong>Links:</strong> ${links.join(' • ')}` : '';
+    qs('#p-notes').value = notes[a?.name] || '';
+  }
+
+  function buildScript(a){
+    const interest = a?.interests?.[0] ? ` I’ve enjoyed your posts about ${a.interests[0].toLowerCase()}.` : '';
+    const brokerage = a?.brokerage ? ` at ${a.brokerage}` : '';
+    const myNote = notes[a?.name] ? ` (note: ${notes[a.name]})` : '';
+    return `Hi ${a?.name?.split(' ')[0] || 'there'} — Jason here, a mortgage broker in WA/AZ. I help agents increase deal flow with fast approvals and proactive buyer qualification. I noticed your recent production${brokerage}, and I think we could win a few more together.${interest}
+
+If you’re open to it, I can share a quick 10-minute walkthrough of my process (no pressure). What’s a good time this week?${myNote}`;
+  }
+
+  qs('#save-notes').onclick = async ()=>{
+    if(!current) return;
+    const text = qs('#p-notes').value;
+    notes[current.name] = text;
+    await saveNote(current.name, text);
+    alert('Notes saved');
+  };
+
+  qs('#gen-script').onclick = ()=>{
+    if(!current){ alert('Select an agent first'); return; }
+    qs('#p-script').value = buildScript(current);
+  };
+
+  async function loadData(){
+    try{
+      const { data: rows } = await sb.from('agents').select('*').order('name');
+      data = rows || [];
+      await loadCloud();
+      render();
+    }catch(e){
+      console.error(e);
+      alertsEl.textContent = "Could not load data.";
+    }
+  }
+
+  loadData();
 </script>
+</body>
+</html>
